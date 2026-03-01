@@ -1,3 +1,15 @@
+"""
+LLM prompt templates for IAM policy classification.
+
+IMPROVED_PROMPT_V1 — original two-class (Weak/Strong) prompt, kept for reference.
+IMPROVED_PROMPT_V2 — production prompt that requests the full structured JSON
+                     consumed by ClassificationResult.
+"""
+
+# ---------------------------------------------------------------------------
+# V1 — archived, two-class output (Weak / Strong)
+# ---------------------------------------------------------------------------
+
 IMPROVED_PROMPT_V1 = """You are a cloud security expert analyzing IAM policies.
 
 Analyze this IAM policy and determine if it is WEAK or STRONG.
@@ -47,71 +59,73 @@ Respond ONLY with valid JSON in this exact format (no markdown, no code blocks):
   "reason": "brief explanation citing specific policy elements (actions, resources, conditions) and whether permissions are read-only or write-capable"
 }}"""
 
-IMPROVED_PROMPT_V2 = """You are a cloud security expert analyzing IAM policies.
 
-Analyze this IAM policy and determine if it is WEAK or STRONG.
+# ---------------------------------------------------------------------------
+# V2 — production prompt, four-class structured output
+# ---------------------------------------------------------------------------
 
-CRITICAL RULES (evaluate in this order):
+IMPROVED_PROMPT_V2 = """You are a cloud security expert analyzing AWS IAM policies.
 
-1. PUBLIC ACCESS CHECK (highest priority):
-   - If Principal = "*" without strong conditions (MFA AND IP restrictions) → ALWAYS WEAK
-   - Even if actions are read-only and resources are scoped
-   - Public access to sensitive data is a critical vulnerability
-   - Example: Principal "*" with s3:GetObject on company data = WEAK (public read access)
+Analyze the policy below and classify it into one of four security categories.
 
-2. UNRESTRICTED ACCESS CHECK:
-   - If Action = "*" (all services) → WEAK
-   - If Resource = "*" (all resources) → WEAK
-   - These grant unrestricted access across the entire AWS account
+CATEGORY DEFINITIONS:
+- "compliant":          Follows least-privilege. Specific actions, scoped ARN resources,
+                        no public access, and appropriate conditions where needed.
+- "needs_review":       Minor concerns but not immediately dangerous. Slightly broad
+                        permissions on non-sensitive resources, or missing recommended
+                        (but not required) conditions.
+- "overly_permissive":  Broader access than necessary. Service wildcards (e.g., s3:*),
+                        Resource="*" with read-only actions, or unnecessary write
+                        permissions without compensating controls.
+- "insecure":           Critical security flaws. Principal="*" without both MFA AND
+                        IP-restriction conditions (public access), Action="*" (full admin),
+                        or Resource="*" with write / delete / modify actions.
 
-3. READ vs WRITE PERMISSIONS:
-   - Read-only wildcards (Describe*, Get*, List*) on scoped resources = STRONG
-   - Write wildcards (Put*, Delete*, Create*, Update*, Modify*) = WEAK unless heavily restricted
-   - Service wildcards (s3:*, ec2:*) = WEAK unless resource is very specific AND read-only
+EVALUATION RULES (apply in priority order):
 
-4. RESOURCE SCOPING:
-   - Resource = "*" → unrestricted (WEAK)
-   - Resource with specific ARN including account/region → scoped (STRONG)
-   - Example: "arn:aws:ec2:us-east-1:123456789012:instance/*" is scoped, not "*"
+1. PUBLIC ACCESS CHECK → insecure
+   Principal = "*" without BOTH MFA AND IP-restriction conditions.
+   Even read-only public access to company data is a critical vulnerability.
 
-A WEAK policy has ANY of:
-- Principal = "*" without both MFA and IP conditions (public access)
-- Action = "*" (unrestricted actions)
-- Resource = "*" with write-capable actions
-- Write/modify wildcards on broad resources
-- No conditions when dealing with sensitive operations
+2. UNRESTRICTED ADMIN CHECK → insecure
+   Action = "*"  OR  (Resource = "*" with ANY write / delete / modify actions present).
 
-A STRONG policy has ALL of:
-- No public access (Principal not "*", or if "*" then MFA AND IP required)
-- Specific actions OR read-only wildcards (Describe*, Get*, List*)
-- Scoped resources (ARNs with account/region/service specified)
-- Follows principle of least privilege
-- No ability to modify/delete critical resources
+3. OVERLY BROAD CHECK → overly_permissive
+   Service wildcards (e.g., s3:*, ec2:*) on unscoped resources, OR
+   Resource = "*" with read-only actions only.
 
-IMPORTANT EXAMPLES:
+4. GOOD PRACTICE CHECK → compliant or needs_review
+   Specific actions AND scoped ARNs AND appropriate conditions → compliant.
+   Mostly specific but missing some best practices                → needs_review.
 
-1. Read-only on scoped resource = STRONG:
-   Action: ["ec2:Describe*", "ec2:Get*"]
-   Resource: "arn:aws:ec2:us-east-1:123456789012:instance/*"
-   → STRONG (read-only, scoped, monitoring use case)
+RISK SCORE GUIDANCE:
+  insecure:           75 – 100
+  overly_permissive:  45 – 74
+  needs_review:       15 – 44
+  compliant:           0 – 14
 
-2. Read-only but PUBLIC = WEAK:
-   Principal: "*"
-   Action: "s3:GetObject"
-   Resource: "arn:aws:s3:::company-data/*"
-   → WEAK (public access to company data, even though read-only)
+EXAMPLES:
+  Action ["ec2:Describe*"]  Resource "arn:aws:ec2:us-east-1:123:instance/*"
+    → compliant (read-only, scoped, no public access)
 
-3. Specific action with MFA and IP = STRONG:
-   Action: "s3:GetObject"
-   Resource: "arn:aws:s3:::reports/*"
-   Condition: MFA required AND IP restrictions
-   → STRONG (specific action, scoped, strong conditions)
+  Principal "*"  Action "s3:GetObject"  Resource "arn:aws:s3:::company-data/*"
+    → insecure (public read access to company data)
+
+  Action "s3:*"  Resource "*"
+    → insecure (full S3 admin on all resources)
+
+  Action ["s3:GetObject", "s3:ListBucket"]  Resource "*"  no conditions
+    → overly_permissive (read-only but unscoped)
 
 Policy to analyze:
 {policy_json}
 
-Respond ONLY with valid JSON in this exact format (no markdown, no code blocks):
+Respond ONLY with valid JSON (no markdown, no code blocks):
 {{
-  "classification": "Weak" or "Strong",
-  "reason": "brief explanation citing specific policy elements (Principal, actions, resources, conditions) and the security implications"
+  "category": "compliant" | "needs_review" | "overly_permissive" | "insecure",
+  "confidence": <float 0.0–1.0>,
+  "risk_score": <integer 0–100>,
+  "explanation": "<detailed explanation citing Principal, Action, Resource, and Condition elements and their security implications>",
+  "recommendations": ["<actionable fix 1>", "<actionable fix 2>"],
+  "policy_summary": "<one sentence: what does this policy actually grant?>"
 }}"""

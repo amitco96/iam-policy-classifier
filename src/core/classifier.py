@@ -1,230 +1,281 @@
+"""
+Classification service for AWS IAM policies.
+
+Routes classification requests to the appropriate LLM provider (Anthropic Claude
+or OpenAI GPT-4), parses the structured JSON response, and returns validated
+ClassificationResult objects.
+
+Usage:
+    from src.core.classifier import ClassificationService
+
+    service = ClassificationService()
+    result = await service.classify_policy(policy_dict, provider="claude")
+    print(result.category, result.risk_score)
+"""
+
 import json
-import os
-from typing import Dict, Any
-from dotenv import load_dotenv
-import openai
+import logging
+import re
+from datetime import datetime, timezone
+from typing import Optional
+
 import anthropic
-from huggingface_hub import InferenceClient
+import openai
+
+from src.config import settings
+from src.core.prompts import IMPROVED_PROMPT_V2
+from src.models.schemas import ClassificationCategory, ClassificationResult
+
+logger = logging.getLogger(__name__)
+
+# Fallback risk scores used when the LLM omits the risk_score field.
+_DEFAULT_RISK_SCORES: dict[str, int] = {
+    "compliant": 10,
+    "needs_review": 35,
+    "overly_permissive": 65,
+    "insecure": 88,
+}
 
 
-load_dotenv()
-
-
-class OpenAIClassifier:
-    """Classify IAM policies using OpenAI's GPT models."""
-
-    def __init__(self, api_key=None, model="gpt-3.5-turbo"):
-        """
-        Initialize OpenAI classifier.
-
-        Args:
-            api_key: OpenAI API key (or set OPENAI_API_KEY env variable)
-            model: Model to use (default: gpt-3.5-turbo)
-        """
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ValueError("OpenAI API key required. Set OPENAI_API_KEY in .env file")
-
-        openai.api_key = self.api_key
-        self.model = model
-
-    def classify(self, policy_json: str, prompt: str) -> str:
-        """
-        Classify a policy using OpenAI.
-
-        Args:
-            policy_json: The IAM policy as JSON string
-            prompt: The prompt template with {policy_json} placeholder
-
-        Returns:
-            str: LLM response
-        """
-        full_prompt = prompt.format(policy_json=policy_json)
-
-        response = openai.ChatCompletion.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": "You are a cloud security expert."},
-                {"role": "user", "content": full_prompt}
-            ],
-            temperature=0.1
-        )
-
-        return response.choices[0].message.content
-
-
-class ClaudeClassifier:
-    """Classify IAM policies using Anthropic's Claude."""
-
-    def __init__(self, api_key=None, model="claude-sonnet-4-5"):
-        """
-        Initialize Claude classifier.
-
-        Args:
-            api_key: Anthropic API key (or set ANTHROPIC_API_KEY env variable)
-            model: Model to use (default: claude-3-5-sonnet-20241022)
-        """
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
-        if not self.api_key:
-            raise ValueError("Anthropic API key required. Set ANTHROPIC_API_KEY in .env file")
-
-        self.client = anthropic.Anthropic(api_key=self.api_key)
-        self.model = model
-
-    def classify(self, policy_json: str, prompt: str) -> str:
-        """
-        Classify a policy using Claude.
-
-        Args:
-            policy_json: The IAM policy as JSON string
-            prompt: The prompt template with {policy_json} placeholder
-
-        Returns:
-            str: LLM response
-        """
-        full_prompt = prompt.format(policy_json=policy_json)
-
-        message = self.client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            messages=[
-                {"role": "user", "content": full_prompt}
-            ]
-        )
-
-        return message.content[0].text
-
-
-
-class IAMPolicyClassifier:
+class ClassificationService:
     """
-    Main engine for classifying IAM policies using LLMs.
+    Production-ready async service for classifying AWS IAM policies.
+
+    Supports Anthropic Claude and OpenAI GPT-4. Both async clients are
+    initialised at construction time only when the corresponding API key is
+    present in settings, so the service can be instantiated in environments
+    where only one provider is configured.
     """
 
-    # Default prompt template
-    DEFAULT_PROMPT = """You are a cloud security expert analyzing IAM policies.
+    def __init__(self) -> None:
+        self._anthropic: Optional[anthropic.AsyncAnthropic] = (
+            anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+            if settings.has_anthropic_key()
+            else None
+        )
+        self._openai: Optional[openai.AsyncOpenAI] = (
+            openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+            if settings.has_openai_key()
+            else None
+        )
 
-Analyze this IAM policy and determine if it is WEAK or STRONG.
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
-A WEAK policy has:
-- Overly permissive actions (using "*" for actions or resources)
-- No conditions or restrictions
-- Broad resource access
-- Missing MFA requirements
-- Allows public access
-
-A STRONG policy has:
-- Specific, limited actions (e.g., "s3:GetObject" instead of "s3:*")
-- Scoped resources (not "*")
-- Conditions that restrict access (IP allowlist, MFA required, time-based)
-- Follows principle of least privilege
-- Explicit deny for dangerous operations
-
-Policy to analyze:
-{policy_json}
-
-Respond ONLY with valid JSON in this exact format (no markdown, no code blocks):
-{{
-  "classification": "Weak" or "Strong",
-  "reason": "brief explanation of why this policy is classified as such"
-}}"""
-
-    def __init__(self, provider="openai", **kwargs):
+    async def classify_policy(
+        self,
+        policy: dict,
+        provider: str = "claude",
+    ) -> ClassificationResult:
         """
-        Initialize the classifier.
+        Main classification method — routes to the appropriate LLM provider.
 
         Args:
-            provider: LLM provider ("openai", "claude")
-            **kwargs: Provider-specific arguments (api_key, model, etc.)
-        """
-        self.provider = provider.lower()
-
-        if self.provider == "openai":
-            self.llm = OpenAIClassifier(**kwargs)
-        elif self.provider == "claude":
-            self.llm = ClaudeClassifier(**kwargs)
-        else:
-            raise ValueError(f"Unknown provider: {provider}. Use 'openai', 'claude', or 'huggingface'")
-
-        self.prompt = self.DEFAULT_PROMPT
-
-    def set_prompt(self, prompt: str):
-        """
-        Set a custom prompt template.
-
-        Args:
-            prompt: Prompt template with {policy_json} placeholder
-        """
-        self.prompt = prompt
-
-    def classify_policy(self, policy: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Classify an IAM policy.
-
-        Args:
-            policy: IAM policy as a Python dictionary
+            policy:   The IAM policy JSON document (already parsed to a dict).
+            provider: Which LLM backend to use: 'claude' or 'openai'.
 
         Returns:
-            dict: Classification result with policy, classification, and reason
+            ClassificationResult with category, risk score, and recommendations.
+
+        Raises:
+            ValueError: If the requested provider is unsupported or not configured.
+            anthropic.APIError / openai.APIError: Propagated on upstream failures.
         """
-        # Convert policy to formatted JSON string
-        policy_json = json.dumps(policy, indent=2)
+        logger.info("Classifying policy with %s", provider)
 
-        # Get LLM response
-        print(f"Calling {self.provider} API...")
-        llm_response = self.llm.classify(policy_json, self.prompt)
+        if provider == "claude":
+            return await self._classify_with_anthropic(policy)
+        if provider == "openai":
+            return await self._classify_with_openai(policy)
 
-        # Parse the response
-        classification_result = self._parse_llm_response(llm_response)
+        raise ValueError(
+            f"Unsupported provider: '{provider}'. "
+            f"Configured providers: {settings.get_available_providers()}"
+        )
 
-        # Build final output
-        result = {
-            "policy": policy,
-            "classification": classification_result["classification"],
-            "reason": classification_result["reason"]
-        }
+    # ------------------------------------------------------------------
+    # Provider implementations
+    # ------------------------------------------------------------------
 
-        return result
+    async def _classify_with_anthropic(self, policy: dict) -> ClassificationResult:
+        """Use Anthropic Claude API for classification."""
+        if self._anthropic is None:
+            raise ValueError(
+                "Anthropic client is not available — ANTHROPIC_API_KEY is not configured."
+            )
 
-    def _parse_llm_response(self, response: str) -> Dict[str, str]:
-        """
-        Parse LLM response to extract classification and reason.
-
-        Args:
-            response: Raw LLM response
-
-        Returns:
-            dict: Parsed classification and reason
-        """
-        # Clean the response (remove markdown code blocks if present)
-        cleaned = response.strip()
-
-        # Remove markdown code blocks
-        if cleaned.startswith("```json"):
-            cleaned = cleaned[7:]
-        if cleaned.startswith("```"):
-            cleaned = cleaned[3:]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
-
-        cleaned = cleaned.strip()
+        prompt = IMPROVED_PROMPT_V2.format(policy_json=json.dumps(policy, indent=2))
 
         try:
-            # Try to parse as JSON
-            result = json.loads(cleaned)
+            message = await self._anthropic.messages.create(
+                model=settings.CLAUDE_MODEL,
+                max_tokens=settings.MAX_TOKENS,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except anthropic.APIConnectionError as exc:
+            logger.error("Anthropic API connection failed: %s", exc)
+            raise
+        except anthropic.RateLimitError as exc:
+            logger.error("Anthropic rate limit exceeded: %s", exc)
+            raise
+        except anthropic.APIStatusError as exc:
+            logger.error("Anthropic API returned status %s: %s", exc.status_code, exc)
+            raise
 
-            # Validate required fields
-            if "classification" not in result or "reason" not in result:
-                raise ValueError("Missing required fields")
+        raw = message.content[0].text
+        parsed = self._parse_llm_response(raw)
+        return self._build_result(parsed, provider_used="claude")
 
-            # Validate classification value
-            if result["classification"] not in ["Weak", "Strong"]:
-                raise ValueError(f"Invalid classification: {result['classification']}")
+    async def _classify_with_openai(self, policy: dict) -> ClassificationResult:
+        """Use OpenAI GPT-4 API for classification."""
+        if self._openai is None:
+            raise ValueError(
+                "OpenAI client is not available — OPENAI_API_KEY is not configured."
+            )
 
-            return result
+        prompt = IMPROVED_PROMPT_V2.format(policy_json=json.dumps(policy, indent=2))
 
-        except json.JSONDecodeError as e:
-            print(f"Failed to parse LLM response as JSON: {e}")
-            print(f"Raw response: {response}")
-            raise ValueError("LLM did not return valid JSON")
+        try:
+            response = await self._openai.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                max_tokens=settings.MAX_TOKENS,
+                temperature=settings.LLM_TEMPERATURE,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a cloud security expert analyzing AWS IAM policies."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
+        except openai.APIConnectionError as exc:
+            logger.error("OpenAI API connection failed: %s", exc)
+            raise
+        except openai.RateLimitError as exc:
+            logger.error("OpenAI rate limit exceeded: %s", exc)
+            raise
+        except openai.APIStatusError as exc:
+            logger.error("OpenAI API returned status %s: %s", exc.status_code, exc)
+            raise
 
+        raw = response.choices[0].message.content or ""
+        parsed = self._parse_llm_response(raw)
+        return self._build_result(parsed, provider_used="openai")
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _parse_llm_response(self, response_text: str) -> dict:
+        """
+        Extract a JSON object from a raw LLM response string.
+
+        Handles three common response shapes:
+        1. Plain JSON — the ideal case.
+        2. JSON wrapped in a markdown code fence (```json ... ``` or ``` ... ```).
+        3. JSON embedded inside surrounding prose — found via regex as a fallback.
+
+        Args:
+            response_text: Raw string returned by the LLM.
+
+        Returns:
+            Parsed dictionary.
+
+        Raises:
+            ValueError: If no valid JSON object can be extracted from the response.
+        """
+        cleaned = response_text.strip()
+
+        # Strip opening code fence line (e.g. "```json\n" or "```\n")
+        if cleaned.startswith("```"):
+            first_newline = cleaned.find("\n")
+            cleaned = cleaned[first_newline + 1:] if first_newline != -1 else cleaned[3:]
+
+        # Strip closing code fence
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3].strip()
+
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        # Last resort: pull the first complete {...} block from the raw text.
+        match = re.search(r"\{.*\}", response_text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+
+        logger.error(
+            "Could not parse LLM response as JSON. First 400 chars: %s",
+            response_text[:400],
+        )
+        raise ValueError("LLM returned a response that could not be parsed as JSON.")
+
+    def _calculate_risk_score(self, category: str) -> int:
+        """
+        Map a classification category to a sensible default risk score.
+
+        Used when the LLM omits the risk_score field in its response.
+
+        Args:
+            category: One of the ClassificationCategory enum values as a string.
+
+        Returns:
+            Integer risk score between 0 and 100.
+        """
+        return _DEFAULT_RISK_SCORES.get(category, 50)
+
+    def _build_result(self, parsed: dict, provider_used: str) -> ClassificationResult:
+        """
+        Construct a validated ClassificationResult from a parsed LLM response.
+
+        Applies safe coercion and clamping so callers always receive a well-formed
+        object regardless of minor variance in LLM output.
+
+        Args:
+            parsed:        Dictionary extracted from the LLM JSON response.
+            provider_used: Name of the provider that produced this response.
+
+        Returns:
+            Fully validated ClassificationResult instance.
+        """
+        category_str = str(parsed.get("category", "needs_review")).lower()
+        try:
+            category = ClassificationCategory(category_str)
+        except ValueError:
+            logger.warning(
+                "LLM returned unrecognised category '%s'; defaulting to 'needs_review'",
+                category_str,
+            )
+            category = ClassificationCategory.needs_review
+
+        raw_risk = parsed.get("risk_score")
+        risk_score = (
+            max(0, min(100, int(raw_risk)))
+            if raw_risk is not None
+            else self._calculate_risk_score(category.value)
+        )
+
+        raw_conf = parsed.get("confidence")
+        confidence = (
+            max(0.0, min(1.0, float(raw_conf)))
+            if raw_conf is not None
+            else 0.5
+        )
+
+        return ClassificationResult(
+            category=category,
+            confidence=confidence,
+            risk_score=risk_score,
+            explanation=parsed.get("explanation", "No explanation provided."),
+            recommendations=parsed.get("recommendations", []),
+            provider_used=provider_used,
+            analyzed_at=datetime.now(timezone.utc),
+            policy_summary=parsed.get("policy_summary"),
+        )
