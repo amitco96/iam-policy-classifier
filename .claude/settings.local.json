@@ -3,7 +3,8 @@
     "allow": [
       "Bash(python -c:*)",
       "Bash(ls:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(wc:*)"
     ]
   }
 }

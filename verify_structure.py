@@ -33,6 +33,14 @@ def verify_imports():
         print(f"  - ASSIGNMENT_POLICIES: OK ({len(ASSIGNMENT_POLICIES)} policies)")
         print(f"  - EXTENDED_POLICIES: OK ({len(EXTENDED_POLICIES)} policies)")
 
+        # Test configuration imports
+        print("\n✓ Testing src.config imports...")
+        from src.config import settings, validate_settings
+        print(f"  - settings: OK")
+        print(f"  - validate_settings: OK")
+        print(f"  - Environment: {settings.ENVIRONMENT}")
+        print(f"  - Available LLM providers: {', '.join(settings.get_available_providers())}")
+
         # Test test functions
         print("\n✓ Testing tests.test_classifier imports...")
         from tests.test_classifier import (
@@ -70,6 +78,7 @@ def verify_imports():
         expected_files = [
             "src/core/classifier.py",
             "src/core/prompts.py",
+            "src/config/settings.py",
             "tests/test_classifier.py",
             "tests/test_policies.py",
             "requirements.txt",
