@@ -21,9 +21,11 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.api.routes.classify import limiter, router as classify_router
 from src.config import settings, validate_settings
 from src.models.schemas import ErrorDetail, ErrorResponse, HealthResponse
 
@@ -120,6 +122,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Attach the slowapi limiter so it can track request counts.
+app.state.limiter = limiter
+
 # CORS — must be added before the logging middleware so preflight requests
 # are handled without generating spurious 500 log entries.
 app.add_middleware(
@@ -200,6 +205,17 @@ async def unhandled_exception_handler(
     )
 
 
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(
+    request: Request, exc: RateLimitExceeded
+) -> JSONResponse:
+    return _json_error(
+        code="RATE_LIMIT_EXCEEDED",
+        message=f"Rate limit exceeded: {exc.detail}",
+        http_status=status.HTTP_429_TOO_MANY_REQUESTS,
+    )
+
+
 # ============================================================================
 # Routes
 # ============================================================================
@@ -220,3 +236,6 @@ async def health_check() -> HealthResponse:
         timestamp=datetime.now(timezone.utc).isoformat(),
         available_providers=settings.get_available_providers(),
     )
+
+
+app.include_router(classify_router)
