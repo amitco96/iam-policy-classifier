@@ -235,36 +235,35 @@ class BatchClassificationResult(BaseModel):
     """
     Aggregate response returned after batch classification.
 
-    Includes the per-policy results together with summary statistics:
-    total count, average risk score, and a breakdown of how many policies
-    fell into each classification category.
+    Includes only the successfully-classified per-policy results together
+    with summary statistics: total submitted, success/failure counts,
+    average risk score, and the highest-severity category found.
     """
 
     results: List[ClassificationResult] = Field(
-        description="Individual classification results, one per submitted policy.",
+        description="Classification results for each successfully classified policy.",
     )
-    total_analyzed: int = Field(
-        description="Number of policies that were successfully analysed.",
+    total_policies: int = Field(
+        description="Total number of policies submitted in the batch.",
+    )
+    successful: int = Field(
+        description="Number of policies that were successfully classified.",
+    )
+    failed: int = Field(
+        description="Number of policies that failed to classify.",
     )
     average_risk_score: float = Field(
-        description="Mean risk score across all analysed policies.",
+        description="Mean risk score across all successfully classified policies.",
     )
-    risk_distribution: Dict[str, int] = Field(
-        description="Count of policies per ClassificationCategory.",
-    )
-    analyzed_at: datetime = Field(
-        description="UTC timestamp of when the batch analysis completed.",
+    highest_risk_category: ClassificationCategory = Field(
+        description="Most severe classification category found among successful results.",
     )
 
     model_config = {"json_schema_extra": {"example": {
         "results": [],
-        "total_analyzed": 3,
+        "total_policies": 3,
+        "successful": 3,
+        "failed": 0,
         "average_risk_score": 48.3,
-        "risk_distribution": {
-            "compliant": 1,
-            "needs_review": 1,
-            "overly_permissive": 1,
-            "insecure": 0,
-        },
-        "analyzed_at": "2026-03-01T12:00:00+00:00",
+        "highest_risk_category": "overly_permissive",
     }}}

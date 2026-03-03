@@ -14,6 +14,7 @@ Error mapping:
     503 — LLM provider not configured or connection failure
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -28,6 +29,9 @@ from slowapi.util import get_remote_address
 from src.config import settings
 from src.core.classifier import ClassificationService
 from src.models.schemas import (
+    BatchClassificationResult,
+    BatchPolicyInput,
+    ClassificationCategory,
     ClassificationResult,
     ErrorDetail,
     ErrorResponse,
@@ -47,6 +51,16 @@ limiter = Limiter(key_func=get_remote_address)
 # when the corresponding API keys are present in settings.
 # ---------------------------------------------------------------------------
 _classifier = ClassificationService()
+
+# ---------------------------------------------------------------------------
+# Severity ordering used to determine highest_risk_category in batch results.
+# ---------------------------------------------------------------------------
+_SEVERITY: dict[ClassificationCategory, int] = {
+    ClassificationCategory.compliant: 0,
+    ClassificationCategory.needs_review: 1,
+    ClassificationCategory.overly_permissive: 2,
+    ClassificationCategory.insecure: 3,
+}
 
 # ---------------------------------------------------------------------------
 # Router
@@ -247,3 +261,157 @@ async def classify_policy(
     )
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Batch — internal helper
+# ---------------------------------------------------------------------------
+
+async def _classify_single(
+    index: int,
+    policy_input: PolicyInput,
+    request_id: str,
+) -> tuple[int, ClassificationResult | BaseException]:
+    """Classify one policy and always return (index, result_or_exception).
+
+    Never raises; exceptions are captured and returned so that
+    asyncio.gather can continue processing the rest of the batch.
+    """
+    provider = policy_input.provider or settings.DEFAULT_LLM_PROVIDER
+    try:
+        result = await _classifier.classify_policy(policy_input.policy_json, provider)
+        return index, result
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Individual policy classification failed at index %d: %s",
+            index,
+            exc,
+            extra={
+                "request_id": request_id,
+                "policy_index": index,
+                "error": str(exc),
+            },
+        )
+        return index, exc
+
+
+# ---------------------------------------------------------------------------
+# Batch endpoint
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/classify/batch",
+    response_model=BatchClassificationResult,
+    summary="Batch Classify IAM Policies",
+    description=(
+        "Analyse up to 10 AWS IAM policy documents concurrently for security "
+        "risks. All policies are dispatched simultaneously via asyncio.gather. "
+        "Partial failures are tolerated — successfully classified policies are "
+        "always returned. Returns 500 only when every policy in the batch fails."
+    ),
+    status_code=status.HTTP_200_OK,
+    responses={
+        422: {
+            "description": (
+                "Request body failed schema validation "
+                "(e.g. empty list or more than 10 policies)"
+            ),
+        },
+        429: {
+            "description": "Rate limit exceeded (max 5 requests / minute per IP)",
+            "content": {"application/json": {"example": {
+                "error": {
+                    "code": "RATE_LIMIT_EXCEEDED",
+                    "message": "Rate limit exceeded: 5 per 1 minute",
+                }
+            }}},
+        },
+        500: {
+            "description": "Every policy in the batch failed to classify",
+            "content": {"application/json": {"example": {
+                "error": {
+                    "code": "ALL_CLASSIFICATIONS_FAILED",
+                    "message": "Every policy in the batch failed to classify.",
+                }
+            }}},
+        },
+    },
+)
+@limiter.limit("5/minute")
+async def classify_batch(
+    request: Request,
+    body: BatchPolicyInput,
+) -> BatchClassificationResult | JSONResponse:
+    """
+    Classify multiple IAM policy documents concurrently.
+
+    Policies are dispatched in parallel; individual failures are logged with
+    their zero-based index and do not abort the remaining classifications.
+    Returns 500 only when every policy fails.
+    """
+    request_id = getattr(request.state, "request_id", "unknown")
+    total_policies = len(body.policies)
+
+    logger.info(
+        "Batch classification request received",
+        extra={"request_id": request_id, "batch_size": total_policies},
+    )
+
+    start_time = time.perf_counter()
+
+    # Dispatch all classifications concurrently.
+    outcomes: list[tuple[int, ClassificationResult | BaseException]] = (
+        await asyncio.gather(
+            *[_classify_single(i, p, request_id) for i, p in enumerate(body.policies)]
+        )
+    )
+
+    # Partition into successes and failures.
+    results: list[ClassificationResult] = []
+    failed = 0
+    for _idx, outcome in outcomes:
+        if isinstance(outcome, BaseException):
+            failed += 1
+        else:
+            results.append(outcome)
+
+    successful = len(results)
+
+    if successful == 0:
+        logger.error(
+            "Batch classification: all %d policies failed",
+            total_policies,
+            extra={"request_id": request_id, "total_policies": total_policies, "failed": failed},
+        )
+        return _error_json(
+            code="ALL_CLASSIFICATIONS_FAILED",
+            message="Every policy in the batch failed to classify.",
+            http_status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    average_risk_score = round(sum(r.risk_score for r in results) / successful, 2)
+    highest_risk_category = max(results, key=lambda r: _SEVERITY[r.category]).category
+
+    duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+    logger.info(
+        "Batch classification completed",
+        extra={
+            "request_id": request_id,
+            "total_policies": total_policies,
+            "successful": successful,
+            "failed": failed,
+            "average_risk_score": average_risk_score,
+            "highest_risk_category": highest_risk_category.value,
+            "duration_ms": duration_ms,
+        },
+    )
+
+    return BatchClassificationResult(
+        results=results,
+        total_policies=total_policies,
+        successful=successful,
+        failed=failed,
+        average_risk_score=average_risk_score,
+        highest_risk_category=highest_risk_category,
+    )
