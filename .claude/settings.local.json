@@ -4,7 +4,9 @@
       "Bash(python -c:*)",
       "Bash(ls:*)",
       "Bash(cat:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)"
     ]
   }
 }
