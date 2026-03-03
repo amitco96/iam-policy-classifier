@@ -11,11 +11,8 @@ Initializes the app with:
 """
 
 import logging
-import time
-import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -23,57 +20,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
 
+from src.api.middleware.logging import RequestLoggingMiddleware
 from src.api.routes.classify import limiter, router as classify_router
 from src.config import settings, validate_settings
 from src.models.schemas import ErrorDetail, ErrorResponse, HealthResponse
+from src.utils.logging import setup_logging
 
 logger = logging.getLogger(__name__)
-
-
-# ============================================================================
-# Middleware
-# ============================================================================
-
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Log every request with method, path, client IP, status code, and duration."""
-
-    async def dispatch(self, request: Request, call_next: Any) -> Any:
-        request_id = str(uuid.uuid4())
-        request.state.request_id = request_id
-
-        client_ip = request.client.host if request.client else "unknown"
-        start_time = time.perf_counter()
-
-        logger.info(
-            "Request started",
-            extra={
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "client_ip": client_ip,
-            },
-        )
-
-        response = await call_next(request)
-
-        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
-
-        logger.info(
-            "Request completed",
-            extra={
-                "request_id": request_id,
-                "method": request.method,
-                "path": request.url.path,
-                "client_ip": client_ip,
-                "status_code": response.status_code,
-                "duration_ms": duration_ms,
-            },
-        )
-
-        response.headers["X-Request-ID"] = request_id
-        return response
 
 
 # ============================================================================
@@ -84,10 +38,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 async def lifespan(app: FastAPI):  # noqa: ARG001
     """Handle startup and shutdown events."""
     # --- Startup ---
-    logging.basicConfig(
-        level=settings.get_log_level_int(),
-        format=settings.LOG_FORMAT,
-    )
+    setup_logging()
     logger.info(
         "Starting application",
         extra={"app": settings.APP_NAME, "version": settings.APP_VERSION},

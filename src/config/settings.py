@@ -96,6 +96,13 @@ class Settings(BaseSettings):
     # Enable JSON structured logging
     LOG_JSON: bool = False
 
+    # CloudWatch log group name
+    LOG_GROUP_NAME: str = "iam-policy-classifier"
+
+    # CloudWatch log stream name template.
+    # Supports {environment} and {hostname} placeholders resolved at startup.
+    LOG_STREAM_NAME: str = "{environment}-{hostname}"
+
     # ============================================================================
     # CORS Configuration
     # ============================================================================
