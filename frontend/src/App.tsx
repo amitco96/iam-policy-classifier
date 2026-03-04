@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import ClassifyPage from './pages/ClassifyPage';
 import BatchPage from './pages/BatchPage';
+import BatchResultsPage from './pages/BatchResultsPage';
 import HistoryPage from './pages/HistoryPage';
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<ClassifyPage />} />
             <Route path="/batch" element={<BatchPage />} />
+            <Route path="/batch/results" element={<BatchResultsPage />} />
             <Route path="/history" element={<HistoryPage />} />
           </Routes>
         </main>

@@ -2,14 +2,14 @@ import type { ClassificationResult, ClassificationCategory } from '../types/api'
 
 // ── Design-system maps ────────────────────────────────────────────────────────
 
-const badgeStyles: Record<ClassificationCategory, string> = {
+export const badgeStyles: Record<ClassificationCategory, string> = {
   compliant: 'bg-green-100 text-green-800',
   needs_review: 'bg-amber-100 text-amber-800',
   overly_permissive: 'bg-orange-100 text-orange-800',
   insecure: 'bg-red-100 text-red-800',
 };
 
-const categoryLabels: Record<ClassificationCategory, string> = {
+export const categoryLabels: Record<ClassificationCategory, string> = {
   compliant: 'Compliant',
   needs_review: 'Needs Review',
   overly_permissive: 'Overly Permissive',
@@ -25,7 +25,7 @@ const gaugeColors: Record<ClassificationCategory, string> = {
 
 // ── Category icons ────────────────────────────────────────────────────────────
 
-function CategoryIcon({ category }: { category: ClassificationCategory }) {
+export function CategoryIcon({ category }: { category: ClassificationCategory }) {
   const cls = 'w-4 h-4 shrink-0';
   switch (category) {
     case 'compliant':
@@ -73,7 +73,7 @@ const ARC_CY = 65;
 const ARC_LEN = Math.PI * ARC_R; // ≈ 163.36
 const ARC_PATH = `M ${ARC_CX - ARC_R},${ARC_CY} A ${ARC_R},${ARC_R} 0 0,1 ${ARC_CX + ARC_R},${ARC_CY}`;
 
-function RiskGauge({ score, category }: { score: number; category: ClassificationCategory }) {
+export function RiskGauge({ score, category }: { score: number; category: ClassificationCategory }) {
   const fill = (Math.min(100, Math.max(0, score)) / 100) * ARC_LEN;
   const color = gaugeColors[category] ?? '#6b7280';
 

@@ -68,7 +68,7 @@ export default function ClassifyPage() {
       <div className="flex flex-1 gap-5 p-6">
 
         {/* LEFT PANEL */}
-        <div className="w-1/2 bg-white shadow-sm rounded-xl border border-gray-100 p-6 flex flex-col gap-4">
+        <div className="w-2/5 bg-white shadow-sm rounded-xl border border-gray-100 p-6 flex flex-col gap-4">
           <h2 className="text-base font-semibold text-gray-800">Policy Input</h2>
 
           {/* Textarea */}
@@ -155,7 +155,7 @@ export default function ClassifyPage() {
         </div>
 
         {/* RIGHT PANEL */}
-        <div className="w-1/2 bg-white shadow-sm rounded-xl border border-gray-100 p-6 flex flex-col gap-4">
+        <div className="w-3/5 bg-white shadow-sm rounded-xl border border-gray-100 p-6 flex flex-col gap-4">
           <h2 className="text-base font-semibold text-gray-800">Result</h2>
 
           {result ? (

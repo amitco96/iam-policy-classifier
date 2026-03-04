@@ -10,8 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@types/jszip": "^3.4.0",
     "autoprefixer": "^10.4.27",
     "axios": "^1.13.6",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.0",
+    "jszip": "^3.10.1",
     "postcss": "^8.5.8",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
