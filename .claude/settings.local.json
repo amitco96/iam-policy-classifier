@@ -6,7 +6,11 @@
       "Bash(cat:*)",
       "Bash(wc:*)",
       "Bash(python:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tailwindcss:*)",
+      "Bash(npm run:*)"
     ]
   }
 }
