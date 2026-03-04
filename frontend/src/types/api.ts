@@ -17,6 +17,7 @@ export interface ClassificationResult {
   recommendations: string[];
   provider_used: string;
   analyzed_at: string;
+  policy_summary?: string;
 }
 
 export interface BatchPolicyInput {

@@ -13,6 +13,7 @@ import {
   badgeStyles,
   categoryLabels,
 } from '../components/ResultCard';
+import { saveEntry } from '../utils/history';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -32,10 +33,26 @@ function isErrorResult(r: ClassificationResult | { error: string }): r is { erro
 function BatchResultCard({
   index,
   result,
+  policyJsonStr,
 }: {
   index: number;
   result: ClassificationResult | { error: string };
+  policyJsonStr: string;
 }) {
+  const [isSaved, setIsSaved] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+
+  function handleSave() {
+    if (!isSaved && !isErrorResult(result)) {
+      let parsed: Record<string, unknown> = {};
+      try { parsed = JSON.parse(policyJsonStr) as Record<string, unknown>; } catch { /* no-op */ }
+      saveEntry(result, parsed);
+      setIsSaved(true);
+      setShowConfirmation(true);
+      setTimeout(() => setShowConfirmation(false), 2000);
+    }
+  }
+
   if (isErrorResult(result)) {
     return (
       <div className="bg-white shadow-sm rounded-xl border border-red-100 p-6">
@@ -110,6 +127,36 @@ function BatchResultCard({
           </ol>
         </div>
       )}
+
+      {/* Save to History */}
+      <div className="flex items-center gap-3 pt-1">
+        {showConfirmation ? (
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-green-600">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"
+              strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
+              <path d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
+            Saved!
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaved}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors disabled:cursor-not-allowed
+              disabled:border-gray-200 disabled:text-gray-400
+              enabled:border-indigo-300 enabled:text-indigo-600 enabled:hover:bg-indigo-50"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth={2} strokeLinecap="round"
+              strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
+              <path d="M17 3H5a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z" />
+            </svg>
+            {isSaved ? 'Already saved' : 'Save to History'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -308,7 +355,7 @@ export default function BatchResultsPage() {
         {/* Individual result cards */}
         <div className="flex flex-col gap-4">
           {result.results.map((r, i) => (
-            <BatchResultCard key={i} index={i} result={r} />
+            <BatchResultCard key={i} index={i} result={r} policyJsonStr={state.policies[i] ?? ''} />
           ))}
         </div>
 

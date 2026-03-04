@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import type { ClassificationResult } from '../types/api';
 import { classifyPolicy } from '../utils/api';
+import { saveEntry } from '../utils/history';
 import ResultCard from '../components/ResultCard';
 
 type Provider = 'claude' | 'openai';
@@ -13,6 +14,9 @@ export default function ClassifyPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ClassificationResult | null>(null);
+  const [policyJson, setPolicyJson] = useState<Record<string, unknown> | null>(null);
+  const [isSaved, setIsSaved] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFileUpload(e: ChangeEvent<HTMLInputElement>) {
@@ -31,6 +35,8 @@ export default function ClassifyPage() {
 
   async function handleSubmit() {
     setError(null);
+    setIsSaved(false);
+    setPolicyJson(null);
 
     let parsed: Record<string, unknown>;
     try {
@@ -45,6 +51,7 @@ export default function ClassifyPage() {
     try {
       const data = await classifyPolicy({ policy_json: parsed, provider });
       setResult(data);
+      setPolicyJson(parsed);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Classification failed. Please try again.';
@@ -52,6 +59,14 @@ export default function ClassifyPage() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function handleSave() {
+    if (!result || !policyJson || isSaved) return;
+    saveEntry(result, policyJson);
+    setIsSaved(true);
+    setShowConfirmation(true);
+    setTimeout(() => setShowConfirmation(false), 2000);
   }
 
   return (
@@ -130,13 +145,8 @@ export default function ClassifyPage() {
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors shadow-sm"
           >
             {isLoading && (
-              <svg
-                className="animate-spin h-4 w-4 text-white"
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
+              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg"
+                fill="none" viewBox="0 0 24 24" aria-hidden="true">
                 <circle className="opacity-25" cx="12" cy="12" r="10"
                   stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor"
@@ -148,9 +158,7 @@ export default function ClassifyPage() {
 
           {/* Inline error */}
           {error && (
-            <p className="text-sm text-red-600" role="alert">
-              {error}
-            </p>
+            <p className="text-sm text-red-600" role="alert">{error}</p>
           )}
         </div>
 
@@ -159,23 +167,45 @@ export default function ClassifyPage() {
           <h2 className="text-base font-semibold text-gray-800">Result</h2>
 
           {result ? (
-            <ResultCard result={result} />
+            <>
+              <ResultCard result={result} />
+
+              {/* Save to History */}
+              <div className="flex items-center gap-3 pt-1">
+                {showConfirmation ? (
+                  <span className="inline-flex items-center gap-1.5 text-sm font-medium text-green-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"
+                      strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
+                      <path d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                    Saved!
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={isSaved}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors disabled:cursor-not-allowed
+                      disabled:border-gray-200 disabled:text-gray-400
+                      enabled:border-indigo-300 enabled:text-indigo-600 enabled:hover:bg-indigo-50"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" strokeWidth={2} strokeLinecap="round"
+                      strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
+                      <path d="M17 3H5a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z" />
+                    </svg>
+                    {isSaved ? 'Already saved' : 'Save to History'}
+                  </button>
+                )}
+              </div>
+            </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-300 gap-3 min-h-[300px]">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={1}
-                stroke="currentColor"
-                className="w-14 h-14"
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z"
-                />
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                strokeWidth={1} stroke="currentColor" className="w-14 h-14" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z" />
               </svg>
               <p className="text-sm text-gray-400">Results will appear here</p>
             </div>
