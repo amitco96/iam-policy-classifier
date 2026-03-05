@@ -1,0 +1,107 @@
+IAM Policy Classifier - AWS Resource Inventory
+Created: 2026-03-05
+Last Updated: 2026-03-05 (Session 5 - Networking + ECS Service)
+Region: us-east-1
+Account ID: 084847995880
+
+=== ECR REPOSITORIES ===
+Backend:
+  ARN:  arn:aws:ecr:us-east-1:084847995880:repository/iam-classifier-backend
+  URI:  084847995880.dkr.ecr.us-east-1.amazonaws.com/iam-classifier-backend:latest
+
+Frontend:
+  ARN:  arn:aws:ecr:us-east-1:084847995880:repository/iam-classifier-frontend
+  URI:  084847995880.dkr.ecr.us-east-1.amazonaws.com/iam-classifier-frontend:latest
+  NOTE: nginx.conf updated to proxy_pass http://localhost:8000/ (Fargate containers share network)
+
+=== S3 BUCKET (Frontend Static Hosting - unused, app runs on ECS) ===
+Bucket Name: iam-classifier-frontend-084847995880
+ARN:         arn:aws:s3:::iam-classifier-frontend-084847995880
+Website URL: http://iam-classifier-frontend-084847995880.s3-website-us-east-1.amazonaws.com
+
+=== VPC / NETWORKING ===
+VPC:     vpc-01158403712ecb615 (default, 172.31.0.0/16)
+Subnets: subnet-0b64d7de72cda34a4 (us-east-1a)
+         subnet-01ef5bbf6422a1acd (us-east-1f)
+         subnet-022061b4937a9c648 (us-east-1b)
+         subnet-03ad5a24b5e87ba72 (us-east-1c)
+         subnet-0d20d9317859656f8 (us-east-1d)
+         subnet-061c172e87de3fb55 (us-east-1e)
+
+Security Group:
+  Name: iam-classifier-sg
+  ID:   sg-0fd14308a5f6c46bd
+  ARN:  arn:aws:ec2:us-east-1:084847995880:security-group/sg-0fd14308a5f6c46bd
+  Rules:
+    Inbound:  TCP 80   from 0.0.0.0/0        (HTTP public)
+    Inbound:  TCP 8000 from 172.31.0.0/16    (backend API, VPC only)
+    Outbound: All traffic (default)
+
+=== APPLICATION LOAD BALANCER ===
+Name: iam-classifier-alb
+ARN:  arn:aws:elasticloadbalancing:us-east-1:084847995880:loadbalancer/app/iam-classifier-alb/7352742bdc372d28
+DNS:  iam-classifier-alb-330518746.us-east-1.elb.amazonaws.com
+URL:  http://iam-classifier-alb-330518746.us-east-1.elb.amazonaws.com
+
+Target Group:
+  Name:         iam-classifier-tg
+  ARN:          arn:aws:elasticloadbalancing:us-east-1:084847995880:targetgroup/iam-classifier-tg/afefc41bf4b8b37a
+  Type:         ip (Fargate)
+  Port:         80
+  Health Check: GET /api/health (interval 30s, threshold 2/3)
+
+Listener:
+  ARN:      arn:aws:elasticloadbalancing:us-east-1:084847995880:listener/app/iam-classifier-alb/7352742bdc372d28/0cb5ec3668304cfc
+  Protocol: HTTP:80 → forward to iam-classifier-tg
+
+=== ECS CLUSTER ===
+Name: iam-classifier-cluster
+ARN:  arn:aws:ecs:us-east-1:084847995880:cluster/iam-classifier-cluster
+
+=== ECS SERVICE ===
+Name:    iam-classifier-service
+ARN:     arn:aws:ecs:us-east-1:084847995880:service/iam-classifier-cluster/iam-classifier-service
+Status:  ACTIVE (steady state)
+Desired: 1 / Running: 1
+Launch:  FARGATE, public IP enabled
+
+=== ECS TASK DEFINITIONS ===
+iam-classifier:1 — SUPERSEDED (health check used curl, not available in python:3.11-slim)
+iam-classifier:2 — ACTIVE (current)
+  ARN:      arn:aws:ecs:us-east-1:084847995880:task-definition/iam-classifier:2
+  CPU:      512 (.25 vCPU)
+  Memory:   1024 MB
+  Network:  awsvpc (Fargate)
+  Containers:
+    - backend  → port 8000
+        Health: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+        Secrets: ANTHROPIC_API_KEY, OPENAI_API_KEY from SSM /iam-classifier/*
+    - frontend → port 80 (nginx → localhost:8000, depends on backend HEALTHY)
+
+=== IAM ROLES ===
+Task Execution Role:
+  Name: iam-classifier-task-execution-role
+  ARN:  arn:aws:iam::084847995880:role/iam-classifier-task-execution-role
+  Policies:
+    - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy (managed)
+    - SSMReadSecrets (inline): ssm:GetParameter(s) on iam-classifier/* params
+
+=== SSM SECRETS ===
+/iam-classifier/ANTHROPIC_API_KEY  (SecureString)
+/iam-classifier/OPENAI_API_KEY     (SecureString)
+
+=== CLOUDWATCH LOG GROUPS ===
+  /ecs/iam-classifier-backend
+  /ecs/iam-classifier-frontend
+
+=== PUBLIC ACCESS ===
+App URL:  http://iam-classifier-alb-330518746.us-east-1.elb.amazonaws.com
+API Docs: http://iam-classifier-alb-330518746.us-east-1.elb.amazonaws.com/api/docs
+
+=== OPTIONAL NEXT STEPS ===
+1. Add HTTPS via ACM certificate + ALB HTTPS listener (port 443)
+2. Register a custom domain in Route 53 pointing to the ALB
+3. Add CloudFront in front of ALB for global CDN + SSL termination
+4. Enable ECS auto-scaling (target tracking on CPU/memory)
+5. Enable ECR image scanning on push for vulnerability detection
+6. Set CloudWatch alarms for task failures and high error rates

@@ -13,7 +13,23 @@
       "Bash(npm run:*)",
       "Bash(docker-compose build:*)",
       "Bash(docker compose:*)",
-      "Bash(powershell.exe:*)"
+      "Bash(powershell.exe:*)",
+      "Bash(aws sts:*)",
+      "Bash(aws ecr:*)",
+      "Bash(aws ecs:*)",
+      "Bash(aws s3api:*)",
+      "Bash(aws iam:*)",
+      "Bash(aws logs:*)",
+      "Bash(MSYS_NO_PATHCONV=1 aws logs:*)",
+      "Bash(docker images:*)",
+      "Bash(docker tag:*)",
+      "Bash(docker push:*)",
+      "Bash(MSYS_NO_PATHCONV=1 aws ecs:*)",
+      "Bash(aws ec2:*)",
+      "Bash(aws elbv2:*)",
+      "Bash(MSYS_NO_PATHCONV=1 aws elbv2:*)",
+      "Bash(docker build:*)",
+      "Bash(curl:*)"
     ]
   }
 }
