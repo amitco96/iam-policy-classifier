@@ -1,4 +1,6 @@
+import axios from 'axios';
 import type { ClassificationResult } from '../types/api';
+import { getSessionId, generateUUID } from './session';
 
 export interface HistoryEntry {
   id: string;
@@ -7,39 +9,35 @@ export interface HistoryEntry {
   policyJson: Record<string, unknown>;
 }
 
-const STORAGE_KEY = 'iam-classifier-history';
-const MAX_ENTRIES = 50;
+const client = axios.create({ baseURL: '' });
 
-export function loadHistory(): HistoryEntry[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as HistoryEntry[]) : [];
-  } catch {
-    return [];
-  }
+function sessionUrl(): string {
+  return `/api/history/${getSessionId()}`;
 }
 
-export function saveEntry(
+export async function loadHistory(): Promise<HistoryEntry[]> {
+  const { data } = await client.get<HistoryEntry[]>(sessionUrl());
+  return data;
+}
+
+export async function saveEntry(
   result: ClassificationResult,
   policyJson: Record<string, unknown>,
-): HistoryEntry {
-  const entries = loadHistory();
-  const entry: HistoryEntry = {
-    id: crypto.randomUUID(),
+): Promise<HistoryEntry> {
+  const body = {
+    entry_id: generateUUID(),
     savedAt: new Date().toISOString(),
     result,
-    policyJson,
+    policy_json: policyJson,
   };
-  const updated = [entry, ...entries].slice(0, MAX_ENTRIES);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-  return entry;
+  const { data } = await client.post<HistoryEntry>(sessionUrl(), body);
+  return data;
 }
 
-export function deleteEntry(id: string): void {
-  const entries = loadHistory().filter(e => e.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+export async function deleteEntry(id: string): Promise<void> {
+  await client.delete(`${sessionUrl()}/${id}`);
 }
 
-export function clearHistory(): void {
-  localStorage.removeItem(STORAGE_KEY);
+export async function clearHistory(): Promise<void> {
+  await client.delete(sessionUrl());
 }

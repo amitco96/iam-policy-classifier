@@ -29,7 +29,8 @@
       "Bash(aws elbv2:*)",
       "Bash(MSYS_NO_PATHCONV=1 aws elbv2:*)",
       "Bash(docker build:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(aws dynamodb:*)"
     ]
   }
 }

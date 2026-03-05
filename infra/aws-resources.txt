@@ -1,6 +1,6 @@
 IAM Policy Classifier - AWS Resource Inventory
 Created: 2026-03-05
-Last Updated: 2026-03-05 (Session 5 - Networking + ECS Service)
+Last Updated: 2026-03-05 (Session 6 - DynamoDB + History API)
 Region: us-east-1
 Account ID: 084847995880
 
@@ -12,12 +12,12 @@ Backend:
 Frontend:
   ARN:  arn:aws:ecr:us-east-1:084847995880:repository/iam-classifier-frontend
   URI:  084847995880.dkr.ecr.us-east-1.amazonaws.com/iam-classifier-frontend:latest
-  NOTE: nginx.conf updated to proxy_pass http://localhost:8000/ (Fargate containers share network)
+  NOTE: nginx.conf uses proxy_pass http://localhost:8000/ (Fargate containers share network)
 
-=== S3 BUCKET (Frontend Static Hosting - unused, app runs on ECS) ===
+=== S3 BUCKET (unused — app runs on ECS/ALB) ===
 Bucket Name: iam-classifier-frontend-084847995880
 ARN:         arn:aws:s3:::iam-classifier-frontend-084847995880
-Website URL: http://iam-classifier-frontend-084847995880.s3-website-us-east-1.amazonaws.com
+NOTE: HTTPS requires a custom domain + ACM certificate. ELB DNS names cannot get ACM certs.
 
 === VPC / NETWORKING ===
 VPC:     vpc-01158403712ecb615 (default, 172.31.0.0/16)
@@ -54,6 +54,20 @@ Listener:
   ARN:      arn:aws:elasticloadbalancing:us-east-1:084847995880:listener/app/iam-classifier-alb/7352742bdc372d28/0cb5ec3668304cfc
   Protocol: HTTP:80 → forward to iam-classifier-tg
 
+=== DYNAMODB ===
+Table Name: iam-classifier-history
+ARN:        arn:aws:dynamodb:us-east-1:084847995880:table/iam-classifier-history
+Billing:    PAY_PER_REQUEST (on-demand)
+Schema:
+  PK: session_id (String) — device-local UUID from localStorage
+  SK: entry_id  (String) — per-classification UUID
+  Attributes: savedAt (String/ISO), result_json (String/JSON), policy_json (String/JSON)
+API:
+  GET    /api/history/{session_id}             — list entries, sorted newest first
+  POST   /api/history/{session_id}             — save entry (201 Created)
+  DELETE /api/history/{session_id}/{entry_id}  — delete one (204 No Content)
+  DELETE /api/history/{session_id}             — clear session (204 No Content)
+
 === ECS CLUSTER ===
 Name: iam-classifier-cluster
 ARN:  arn:aws:ecs:us-east-1:084847995880:cluster/iam-classifier-cluster
@@ -66,25 +80,36 @@ Desired: 1 / Running: 1
 Launch:  FARGATE, public IP enabled
 
 === ECS TASK DEFINITIONS ===
-iam-classifier:1 — SUPERSEDED (health check used curl, not available in python:3.11-slim)
-iam-classifier:2 — ACTIVE (current)
-  ARN:      arn:aws:ecs:us-east-1:084847995880:task-definition/iam-classifier:2
+iam-classifier:1 — SUPERSEDED (curl health check, not available in python:3.11-slim)
+iam-classifier:2 — SUPERSEDED (missing taskRoleArn for DynamoDB)
+iam-classifier:3 — ACTIVE (current)
+  ARN:      arn:aws:ecs:us-east-1:084847995880:task-definition/iam-classifier:3
   CPU:      512 (.25 vCPU)
   Memory:   1024 MB
   Network:  awsvpc (Fargate)
+  taskRoleArn: iam-classifier-task-role (DynamoDB access)
   Containers:
     - backend  → port 8000
-        Health: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+        Env:     DYNAMODB_TABLE=iam-classifier-history, DYNAMODB_REGION=us-east-1
+        Health:  python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
         Secrets: ANTHROPIC_API_KEY, OPENAI_API_KEY from SSM /iam-classifier/*
     - frontend → port 80 (nginx → localhost:8000, depends on backend HEALTHY)
 
 === IAM ROLES ===
-Task Execution Role:
+Task Execution Role (infra — ECR pull + CW logs + SSM secrets):
   Name: iam-classifier-task-execution-role
   ARN:  arn:aws:iam::084847995880:role/iam-classifier-task-execution-role
   Policies:
     - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy (managed)
     - SSMReadSecrets (inline): ssm:GetParameter(s) on iam-classifier/* params
+
+Task Role (runtime — what the app code can do):
+  Name: iam-classifier-task-role
+  ARN:  arn:aws:iam::084847995880:role/iam-classifier-task-role
+  Policies:
+    - DynamoDBHistoryAccess (inline):
+        dynamodb:PutItem, GetItem, Query, DeleteItem, BatchWriteItem, Scan
+        on arn:aws:dynamodb:us-east-1:*:table/iam-classifier-history
 
 === SSM SECRETS ===
 /iam-classifier/ANTHROPIC_API_KEY  (SecureString)
@@ -97,11 +122,13 @@ Task Execution Role:
 === PUBLIC ACCESS ===
 App URL:  http://iam-classifier-alb-330518746.us-east-1.elb.amazonaws.com
 API Docs: http://iam-classifier-alb-330518746.us-east-1.elb.amazonaws.com/api/docs
+History:  http://iam-classifier-alb-330518746.us-east-1.elb.amazonaws.com/api/history/{session_id}
 
 === OPTIONAL NEXT STEPS ===
-1. Add HTTPS via ACM certificate + ALB HTTPS listener (port 443)
-2. Register a custom domain in Route 53 pointing to the ALB
-3. Add CloudFront in front of ALB for global CDN + SSL termination
-4. Enable ECS auto-scaling (target tracking on CPU/memory)
-5. Enable ECR image scanning on push for vulnerability detection
-6. Set CloudWatch alarms for task failures and high error rates
+1. HTTPS: Register a custom domain (Route 53) → request ACM cert → add ALB HTTPS listener
+   (ACM certs cannot be issued for *.elb.amazonaws.com — custom domain required)
+2. Add CloudFront in front of ALB for global CDN + automatic HTTPS via CloudFront cert
+3. Enable ECS auto-scaling (target tracking on CPU/memory)
+4. Enable ECR image scan on push for vulnerability detection
+5. Set CloudWatch alarms for task failures and high error rates
+6. Add DynamoDB TTL on 'savedAt' to auto-expire old history entries

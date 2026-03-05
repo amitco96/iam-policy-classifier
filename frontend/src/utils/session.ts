@@ -1,0 +1,21 @@
+const SESSION_KEY = 'iam-classifier-session-id';
+
+export function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+export function getSessionId(): string {
+  let id = localStorage.getItem(SESSION_KEY);
+  if (!id) {
+    id = generateUUID();
+    localStorage.setItem(SESSION_KEY, id);
+    console.log('[iam-classifier] Created new session ID:', id);
+  } else {
+    console.log('[iam-classifier] Using existing session ID:', id);
+  }
+  return id;
+}

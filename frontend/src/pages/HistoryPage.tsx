@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ClassificationCategory } from '../types/api';
 import {
@@ -178,10 +178,18 @@ function HistoryRow({
 
 export default function HistoryPage() {
   const navigate = useNavigate();
-  const [entries, setEntries] = useState<HistoryEntry[]>(() => loadHistory());
+  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<ClassificationCategory | ''>('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadHistory()
+      .then(setEntries)
+      .catch(() => setEntries([]))
+      .finally(() => setIsLoading(false));
+  }, []);
 
   const filteredEntries = useMemo(() => {
     const lowerSearch = searchText.toLowerCase();
@@ -195,15 +203,15 @@ export default function HistoryPage() {
     });
   }, [entries, searchText, categoryFilter]);
 
-  function handleDelete(id: string) {
-    deleteEntry(id);
-    setEntries(loadHistory());
+  async function handleDelete(id: string) {
+    await deleteEntry(id);
+    setEntries(prev => prev.filter(e => e.id !== id));
     if (expandedId === id) setExpandedId(null);
   }
 
-  function handleClearAll() {
+  async function handleClearAll() {
     if (!window.confirm('Delete all saved classifications? This cannot be undone.')) return;
-    clearHistory();
+    await clearHistory();
     setEntries([]);
     setExpandedId(null);
   }
@@ -233,7 +241,17 @@ export default function HistoryPage() {
 
       <div className="flex flex-col gap-4 p-6">
 
-        {entries.length === 0 ? (
+        {isLoading ? (
+          /* ── Loading state ────────────────────────────────────────── */
+          <div className="flex flex-col items-center justify-center py-24 gap-3 text-gray-400">
+            <svg className="animate-spin h-8 w-8 text-indigo-400" xmlns="http://www.w3.org/2000/svg"
+              fill="none" viewBox="0 0 24 24" aria-hidden="true">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <p className="text-sm text-gray-400">Loading history...</p>
+          </div>
+        ) : entries.length === 0 ? (
           /* ── Empty state ──────────────────────────────────────────── */
           <div className="flex flex-col items-center justify-center py-24 gap-4 text-gray-400">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"

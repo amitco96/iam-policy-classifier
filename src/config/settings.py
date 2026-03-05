@@ -130,6 +130,13 @@ class Settings(BaseSettings):
     ENABLE_API_AUTH: bool = False
 
     # ============================================================================
+    # DynamoDB Configuration
+    # ============================================================================
+
+    DYNAMODB_TABLE: str = "iam-classifier-history"
+    DYNAMODB_REGION: str = "us-east-1"
+
+    # ============================================================================
     # Database Configuration (Future Use - Placeholder)
     # ============================================================================
 

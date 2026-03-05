@@ -23,6 +23,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.api.middleware.logging import RequestLoggingMiddleware
 from src.api.routes.classify import limiter, router as classify_router
+from src.api.routes.history import router as history_router
 from src.config import settings, validate_settings
 from src.models.schemas import ErrorDetail, ErrorResponse, HealthResponse
 from src.utils.logging import setup_logging
@@ -190,3 +191,4 @@ async def health_check() -> HealthResponse:
 
 
 app.include_router(classify_router)
+app.include_router(history_router)

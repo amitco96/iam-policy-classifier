@@ -40,16 +40,27 @@ function BatchResultCard({
   policyJsonStr: string;
 }) {
   const [isSaved, setIsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  function handleSave() {
-    if (!isSaved && !isErrorResult(result)) {
+  async function handleSave() {
+    if (isSaved || isSaving || isErrorResult(result)) return;
+    setSaveError(null);
+    setIsSaving(true);
+    try {
       let parsed: Record<string, unknown> = {};
       try { parsed = JSON.parse(policyJsonStr) as Record<string, unknown>; } catch { /* no-op */ }
-      saveEntry(result, parsed);
+      await saveEntry(result, parsed);
       setIsSaved(true);
       setShowConfirmation(true);
       setTimeout(() => setShowConfirmation(false), 2000);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to save — please try again.';
+      setSaveError(message);
+    } finally {
+      setIsSaving(false);
     }
   }
 
@@ -129,32 +140,54 @@ function BatchResultCard({
       )}
 
       {/* Save to History */}
-      <div className="flex items-center gap-3 pt-1">
-        {showConfirmation ? (
-          <span className="inline-flex items-center gap-1.5 text-sm font-medium text-green-600">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"
-              strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
-              <path d="M4.5 12.75l6 6 9-13.5" />
-            </svg>
-            Saved!
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaved}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors disabled:cursor-not-allowed
-              disabled:border-gray-200 disabled:text-gray-400
-              enabled:border-indigo-300 enabled:text-indigo-600 enabled:hover:bg-indigo-50"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth={2} strokeLinecap="round"
-              strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
-              <path d="M17 3H5a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z" />
-            </svg>
-            {isSaved ? 'Already saved' : 'Save to History'}
-          </button>
+      <div className="flex flex-col gap-2 pt-1">
+        <div className="flex items-center gap-3">
+          {showConfirmation ? (
+            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-green-600">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"
+                strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
+                <path d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+              Saved!
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaved || isSaving}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg border focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors disabled:cursor-not-allowed
+                disabled:border-gray-200 disabled:text-gray-400
+                enabled:border-indigo-300 enabled:text-indigo-600 enabled:hover:bg-indigo-50"
+            >
+              {isSaving ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg"
+                    fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle className="opacity-25" cx="12" cy="12" r="10"
+                      stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth={2} strokeLinecap="round"
+                    strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
+                    <path d="M17 3H5a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z" />
+                  </svg>
+                  {isSaved ? 'Already saved' : 'Save to History'}
+                </>
+              )}
+            </button>
+          )}
+        </div>
+        {saveError && (
+          <p className="text-sm text-red-600" role="alert">
+            Save failed: {saveError}
+          </p>
         )}
       </div>
     </div>

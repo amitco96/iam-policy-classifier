@@ -5,6 +5,7 @@
   "cpu": "512",
   "memory": "1024",
   "executionRoleArn": "arn:aws:iam::084847995880:role/iam-classifier-task-execution-role",
+  "taskRoleArn": "arn:aws:iam::084847995880:role/iam-classifier-task-role",
   "containerDefinitions": [
     {
       "name": "backend",
@@ -19,7 +20,9 @@
       "environment": [
         {"name": "ENVIRONMENT", "value": "production"},
         {"name": "LOG_LEVEL", "value": "INFO"},
-        {"name": "LOG_JSON", "value": "true"}
+        {"name": "LOG_JSON", "value": "true"},
+        {"name": "DYNAMODB_TABLE", "value": "iam-classifier-history"},
+        {"name": "DYNAMODB_REGION", "value": "us-east-1"}
       ],
       "secrets": [
         {
