@@ -1,0 +1,28 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iam-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    networks:
+      - iam-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: iam-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - iam-network
+
+networks:
+  iam-network:
+    driver: bridge

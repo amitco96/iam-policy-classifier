@@ -27,7 +27,28 @@ This engine analyzes AWS IAM policies and classifies them into security risk cat
 - [ ] CI/CD pipeline
 - [ ] Monitoring & logging
 
-## Local Development
+## Running with Docker
+
+The fastest way to run the full stack (backend + frontend) locally:
+
+```bash
+# 1. Copy the Docker env template and add your API keys
+cp .env.docker.example .env
+# Edit .env and set ANTHROPIC_API_KEY and/or OPENAI_API_KEY
+
+# 2. Build and start both containers
+docker-compose up --build
+```
+
+- **App (React UI):** http://localhost
+- **Backend API / Swagger docs:** http://localhost:8000/docs
+
+To stop:
+```bash
+docker-compose down
+```
+
+## Local Development (without Docker)
 ```bash
 # Setup
 pip install -r requirements.txt
