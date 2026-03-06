@@ -88,7 +88,7 @@ export default function ClassifyPage() {
       <header className="px-6 py-5 bg-white/70 backdrop-blur-sm border-b border-gray-100">
         <h1 className="text-2xl font-bold text-gray-900">IAM Policy Classifier</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Analyze AWS IAM policies for security risks and compliance issues
+          Analyze AWS IAM policies for security risks and compliance issues.
         </p>
       </header>
 
