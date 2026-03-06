@@ -2,6 +2,35 @@
 
 AI-powered security classification engine for AWS IAM policies using multiple LLM providers (Claude, GPT).
 
+---
+
+## Managing Infrastructure
+
+The app runs on AWS ECS Fargate. Scale it up before a demo, down after to avoid idle costs.
+
+**Prerequisites:** AWS CLI installed and configured (`aws configure`), Docker Desktop
+
+```powershell
+# Spin up (before an interview or demo)
+.\infra\manage.ps1 up
+
+# Spin down (after — saves ~$1-3/day)
+.\infra\manage.ps1 down
+```
+
+```bash
+# Same commands on Linux / macOS / GitHub Actions
+./infra/manage.sh up
+./infra/manage.sh down
+```
+
+**Live URL:** http://iam-classifier-alb-330518746.us-east-1.elb.amazonaws.com
+
+> **CI/CD:** Every `git push` to `main` automatically runs tests and redeploys to ECS
+> via GitHub Actions (`.github/workflows/deploy.yml`).
+
+---
+
 ## Overview
 
 This engine analyzes AWS IAM policies and classifies them into security risk categories:
