@@ -124,6 +124,24 @@ App URL:  http://iam-classifier-alb-330518746.us-east-1.elb.amazonaws.com
 API Docs: http://iam-classifier-alb-330518746.us-east-1.elb.amazonaws.com/api/docs
 History:  http://iam-classifier-alb-330518746.us-east-1.elb.amazonaws.com/api/history/{session_id}
 
+=== CI/CD (GitHub Actions) ===
+Workflows:  .github/workflows/deploy.yml   — push to main → test → build → deploy
+            .github/workflows/pr-check.yml — PR to main → tests only (no deploy)
+
+GitHub Secrets required (Settings → Secrets → Actions):
+  AWS_ACCESS_KEY_ID       — IAM user amit-dev access key
+  AWS_SECRET_ACCESS_KEY   — IAM user amit-dev secret key
+  AWS_ACCOUNT_ID          — 084847995880
+
+IAM User: amit-dev
+  Current policy: AdministratorAccess (fine for solo dev/portfolio project)
+  TODO (tighten permissions later): scope down to only what CI/CD needs:
+    - ecr:GetAuthorizationToken, ecr:BatchCheckLayerAvailability, ecr:PutImage, etc.
+    - ecs:RegisterTaskDefinition, ecs:UpdateService, ecs:DescribeServices, ecs:DescribeTaskDefinition
+    - iam:PassRole (for task execution role + task role)
+    Reason to defer: AdministratorAccess is acceptable for a personal portfolio project
+    with a private repo; tighten before any multi-user or commercial use.
+
 === OPTIONAL NEXT STEPS ===
 1. HTTPS: Register a custom domain (Route 53) → request ACM cert → add ALB HTTPS listener
    (ACM certs cannot be issued for *.elb.amazonaws.com — custom domain required)

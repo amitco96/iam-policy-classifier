@@ -1,0 +1,126 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  ECR_BACKEND: 084847995880.dkr.ecr.us-east-1.amazonaws.com/iam-classifier-backend
+  ECR_FRONTEND: 084847995880.dkr.ecr.us-east-1.amazonaws.com/iam-classifier-frontend
+  ECS_CLUSTER: iam-classifier-cluster
+  ECS_SERVICE: iam-classifier-service
+  TASK_FAMILY: iam-classifier
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} \
+            | docker login --username AWS --password-stdin \
+              ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+
+      - name: Build and push backend image
+        id: build-backend
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          docker build -t ${{ env.ECR_BACKEND }}:${IMAGE_TAG} -t ${{ env.ECR_BACKEND }}:latest .
+          docker push ${{ env.ECR_BACKEND }}:${IMAGE_TAG}
+          docker push ${{ env.ECR_BACKEND }}:latest
+          echo "image=${{ env.ECR_BACKEND }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Build and push frontend image
+        id: build-frontend
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          docker build -t ${{ env.ECR_FRONTEND }}:${IMAGE_TAG} -t ${{ env.ECR_FRONTEND }}:latest ./frontend
+          docker push ${{ env.ECR_FRONTEND }}:${IMAGE_TAG}
+          docker push ${{ env.ECR_FRONTEND }}:latest
+          echo "image=${{ env.ECR_FRONTEND }}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Register new ECS task definition revision
+        id: register-task-def
+        run: |
+          BACKEND_IMAGE="${{ steps.build-backend.outputs.image }}"
+          FRONTEND_IMAGE="${{ steps.build-frontend.outputs.image }}"
+
+          # Fetch current task definition and update image URIs
+          CURRENT_TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.TASK_FAMILY }} \
+            --query 'taskDefinition' \
+            --output json)
+
+          NEW_TASK_DEF=$(echo "$CURRENT_TASK_DEF" | python3 -c "
+          import json, sys
+          td = json.load(sys.stdin)
+          for container in td['containerDefinitions']:
+              if container['name'] == 'backend':
+                  container['image'] = '$BACKEND_IMAGE'
+              elif container['name'] == 'frontend':
+                  container['image'] = '$FRONTEND_IMAGE'
+          # Remove read-only fields before registering
+          for key in ['taskDefinitionArn', 'revision', 'status', 'requiresAttributes',
+                      'placementConstraints', 'compatibilities', 'registeredAt', 'registeredBy']:
+              td.pop(key, None)
+          print(json.dumps(td))
+          ")
+
+          NEW_REVISION=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "task-def-arn=$NEW_REVISION" >> $GITHUB_OUTPUT
+          echo "Registered new task definition: $NEW_REVISION"
+
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.register-task-def.outputs.task-def-arn }} \
+            --force-new-deployment
+
+      - name: Wait for deployment to stabilize
+        run: |
+          echo "Waiting for ECS service to reach steady state..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
+          echo "Deployment complete."
