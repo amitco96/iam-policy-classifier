@@ -60,11 +60,22 @@ export default function BatchPage() {
   }
 
   function appendTexts(texts: string[]): number {
-    const available = MAX_POLICIES - cards.length;
-    const toAdd = texts.slice(0, available);
-    const newCards = toAdd.map(text => ({ id: nextId(), text, jsonError: null }));
-    setCards(prev => [...prev, ...newCards]);
-    return toAdd.length;
+    // Fill existing empty cards first, then add new ones for the overflow.
+    const emptyCards = cards.filter(c => c.text.trim() === '');
+    const fillPairs = emptyCards.slice(0, texts.length).map((c, i) => [c.id, texts[i]] as const);
+    const fillMap = new Map(fillPairs);
+    const fillCount = fillPairs.length;
+
+    const overflow = texts.slice(fillCount);
+    const canAdd = MAX_POLICIES - cards.length;
+    const newCards = overflow.slice(0, canAdd).map(text => ({ id: nextId(), text, jsonError: null }));
+
+    setCards(prev => [
+      ...prev.map(c => fillMap.has(c.id) ? { ...c, text: fillMap.get(c.id)!, jsonError: null } : c),
+      ...newCards,
+    ]);
+
+    return fillCount + newCards.length;
   }
 
   function handleJsonFilesUpload(e: ChangeEvent<HTMLInputElement>) {
