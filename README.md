@@ -212,6 +212,20 @@ iam-policy-classifier/
 
 ---
 
+## Cost
+
+The entire project — from prototype to production deployment with CI/CD — cost under $30.
+
+| Item | Cost |
+|------|------|
+| Anthropic API (development + testing) | ~$25.67 |
+| AWS infrastructure (ECS, ALB, ECR, DynamoDB) | ~$0.33 |
+| **Total** | **~$26** |
+
+API costs were the majority — Claude Sonnet was used for all classification calls during development and testing. Production running cost is ~$1–3/day when live (ECS Fargate + ALB), $0 when scaled down.
+
+---
+
 ## License
 
 MIT License — see [LICENSE](LICENSE).
