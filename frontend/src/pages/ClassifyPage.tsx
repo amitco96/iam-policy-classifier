@@ -19,6 +19,7 @@ export default function ClassifyPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [jsonValid, setJsonValid] = useState<boolean | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFileUpload(e: ChangeEvent<HTMLInputElement>) {
@@ -30,6 +31,7 @@ export default function ClassifyPage() {
       setPolicyText(text);
       setFileName(file.name);
       setError(null);
+      try { JSON.parse(text); setJsonValid(true); } catch { setJsonValid(false); }
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -45,7 +47,7 @@ export default function ClassifyPage() {
     try {
       parsed = JSON.parse(policyText);
     } catch {
-      setError('Invalid JSON — please check your policy and try again.');
+      setError('Invalid JSON — please check your policy format.');
       return;
     }
 
@@ -105,11 +107,29 @@ export default function ClassifyPage() {
             placeholder={'{\n  "Version": "2012-10-17",\n  "Statement": [...]\n}'}
             value={policyText}
             onChange={(e) => {
-              setPolicyText(e.target.value);
+              const text = e.target.value;
+              setPolicyText(text);
               setError(null);
+              if (text.trim() === '') {
+                setJsonValid(null);
+              } else {
+                try { JSON.parse(text); setJsonValid(true); } catch { setJsonValid(false); }
+              }
             }}
             spellCheck={false}
           />
+
+          {/* JSON validity indicator */}
+          {jsonValid === true && (
+            <p className="flex items-center gap-1 text-xs text-green-600 -mt-2">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"
+                strokeLinejoin="round" className="w-3.5 h-3.5" aria-hidden="true">
+                <path d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+              Valid JSON
+            </p>
+          )}
 
           {/* File upload */}
           <div className="flex items-center gap-3">
@@ -166,12 +186,26 @@ export default function ClassifyPage() {
                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
             )}
-            {isLoading ? 'Classifying...' : 'Classify Policy'}
+            {isLoading ? 'Analyzing...' : 'Classify Policy'}
           </button>
 
           {/* Inline error */}
           {error && (
-            <p className="text-sm text-red-600" role="alert">{error}</p>
+            <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2" role="alert">
+              <p className="flex-1">{error}</p>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                aria-label="Dismiss error"
+                className="shrink-0 text-red-400 hover:text-red-600 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth={2} strokeLinecap="round"
+                  strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
+                  <path d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           )}
         </div>
 
@@ -179,7 +213,17 @@ export default function ClassifyPage() {
         <div className="w-3/5 bg-white shadow-sm rounded-xl border border-gray-100 p-6 flex flex-col gap-4">
           <h2 className="text-base font-semibold text-gray-800">Result</h2>
 
-          {result ? (
+          {isLoading ? (
+            <div className="flex-1 flex flex-col gap-3 animate-pulse min-h-[300px] pt-2">
+              <div className="h-7 bg-gray-200 rounded-lg w-1/3" />
+              <div className="h-4 bg-gray-200 rounded w-full" />
+              <div className="h-4 bg-gray-200 rounded w-5/6" />
+              <div className="h-4 bg-gray-200 rounded w-4/6" />
+              <div className="h-20 bg-gray-200 rounded-lg w-full mt-2" />
+              <div className="h-4 bg-gray-200 rounded w-3/4" />
+              <div className="h-4 bg-gray-200 rounded w-2/3" />
+            </div>
+          ) : result ? (
             <>
               <ResultCard result={result} />
 

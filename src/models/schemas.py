@@ -34,6 +34,25 @@ class HealthResponse(BaseModel):
     }}}
 
 
+class DetailedHealthResponse(BaseModel):
+    """Response model for the /health/detailed endpoint."""
+
+    status: str
+    environment: str
+    providers: Dict[str, str]
+    version: str
+
+    model_config = {"json_schema_extra": {"example": {
+        "status": "healthy",
+        "environment": "production",
+        "providers": {
+            "anthropic": "configured",
+            "openai": "not configured",
+        },
+        "version": "1.0.0",
+    }}}
+
+
 # ============================================================================
 # Error Responses
 # ============================================================================

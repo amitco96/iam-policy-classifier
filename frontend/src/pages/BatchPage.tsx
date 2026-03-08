@@ -265,7 +265,29 @@ export default function BatchPage() {
           </button>
 
           {submitError && (
-            <p className="text-sm text-red-600" role="alert">{submitError}</p>
+            <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2" role="alert">
+              <p className="flex-1">{submitError}</p>
+              <button
+                type="button"
+                onClick={() => setSubmitError(null)}
+                aria-label="Dismiss error"
+                className="shrink-0 text-red-400 hover:text-red-600 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth={2} strokeLinecap="round"
+                  strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
+                  <path d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+
+          {isLoading && (
+            <div className="flex flex-col gap-2 animate-pulse pt-1">
+              <div className="h-3 bg-gray-200 rounded w-2/3" />
+              <div className="h-3 bg-gray-200 rounded w-1/2" />
+              <div className="h-3 bg-gray-200 rounded w-3/5" />
+            </div>
           )}
         </div>
       </div>

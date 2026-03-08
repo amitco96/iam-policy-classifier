@@ -25,7 +25,7 @@ from src.api.middleware.logging import RequestLoggingMiddleware
 from src.api.routes.classify import limiter, router as classify_router
 from src.api.routes.history import router as history_router
 from src.config import settings, validate_settings
-from src.models.schemas import ErrorDetail, ErrorResponse, HealthResponse
+from src.models.schemas import DetailedHealthResponse, ErrorDetail, ErrorResponse, HealthResponse
 from src.utils.logging import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -187,6 +187,26 @@ async def health_check() -> HealthResponse:
         environment=settings.ENVIRONMENT,
         timestamp=datetime.now(timezone.utc).isoformat(),
         available_providers=settings.get_available_providers(),
+    )
+
+
+@app.get(
+    "/health/detailed",
+    response_model=DetailedHealthResponse,
+    summary="Detailed Health Check",
+    description="Returns health status with per-provider configuration details.",
+    tags=["System"],
+)
+async def health_check_detailed() -> DetailedHealthResponse:
+    """Detailed liveness probe — reports which LLM providers are configured."""
+    return DetailedHealthResponse(
+        status="healthy",
+        environment=settings.ENVIRONMENT,
+        providers={
+            "anthropic": "configured" if settings.has_anthropic_key() else "not configured",
+            "openai": "configured" if settings.has_openai_key() else "not configured",
+        },
+        version=settings.APP_VERSION,
     )
 
 
